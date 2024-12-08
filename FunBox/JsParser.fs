@@ -4,13 +4,15 @@
     open System.Collections.Generic
     open System
 
+    let whitespaces = many (skipAnyOf [' '; '\t']) |>> ignore
     let ws = spaces
     let str_ws s = pstring s .>> ws
-    let strCI_ws s = pstringCI s .>> ws
     let float_ws = pfloat .>> ws
+    let optionalSemicolon = whitespaces .>> (newline <|> pchar ';')
+    //let optionalSemicolon = (lineFeed <|> skipChar ';')
 
     let private jsKeywords =
-        [   "function"; "true"; "false"; "null"; 
+        [   "function"; "true"; "false"; "null"; "return"
         ] |> fun kws ->
             HashSet<string>(kws, StringComparer.Ordinal)
 
@@ -66,6 +68,7 @@
         | JsNull
         | BinaryExpression of JsExpression * string * JsExpression
         | UnaryExpression  of string * JsExpression
+        | Return of JsExpression option
 
     let strToBool v =
         v = "true"
@@ -95,20 +98,35 @@
     let JS_LOGICAL_EXPRESSION = logicOpp.ExpressionParser
     let logicalOperator = str_ws "=" <|> str_ws "<=" <|> str_ws ">=" <|> str_ws "<>" <|> str_ws ">" <|> str_ws "<"
     let primitiveLogicalExpression =
-        (JS_PRIMITIVE_EXPRESSION .>>.? logicalOperator .>>. JS_PRIMITIVE_EXPRESSION |>> flatten |>> BinaryExpression)
-    let logicExpressionTerm = (primitiveLogicalExpression) <|> between (str_ws "(") (str_ws ")") JS_LOGICAL_EXPRESSION
+        (JS_MATH_EXPRESSION .>>.? logicalOperator .>>. JS_MATH_EXPRESSION |>> flatten |>> BinaryExpression)
+    let logicExpressionTerm = (primitiveLogicalExpression) <|> between (str_ws "(") (str_ws ")") JS_MATH_EXPRESSION
     logicOpp.TermParser <- logicExpressionTerm
 
     logicOpp.AddOperator(InfixOperator("&&", ws, 1, Associativity.Left, fun x y -> BinaryExpression(x, "&&", y)))
     logicOpp.AddOperator(InfixOperator("||", ws, 1, Associativity.Left, fun x y -> BinaryExpression(x, "||", y)))
     logicOpp.AddOperator(PrefixOperator("!", ws, 3, false, fun x -> UnaryExpression("!", x)))
+    
+    let x = opt(whitespaces >>. JS_LOGICAL_EXPRESSION)
+    //let JS_RETURN = pstring "return" >>.  (opt(whitespaces >>. JS_MATH_EXPRESSION)) .>> optionalSemicolon |>> Return
+    //let JS_RETURN = pstring "return" >>. optionalSemicolon |>> fun x -> Return None
+    let JS_RETURN = pstring "return" >>. (opt(attempt(whitespaces >>. JS_LOGICAL_EXPRESSION))) .>> optionalSemicolon |>> Return
+    //let JS_RETURN = pstring "return" >>. whitespaces >>. JS_LOGICAL_EXPRESSION .>> optionalSemicolon |>> fun x -> Return (Some x)
+    let EXPRESSION_STATEMENT = JS_MATH_EXPRESSION .>> optionalSemicolon
+    let JS_EXPRESSION = JS_RETURN <|> EXPRESSION_STATEMENT
 
-    let JS_EXPRESSION = JS_MATH_EXPRESSION 
+    let JS_PROGRAM = many JS_EXPRESSION
 
-    let JS_PROGRAM = JS_EXPRESSION
+    let test str =
+        let p = run optionalSemicolon str 
+        p
 
     let parseJs str =
+        let str = str+";"
         match run JS_PROGRAM str with
-        | Success(result, _, _)   ->
-            result
-        | Failure(errorMsg, _, _) -> failwithf "Failure: %s" errorMsg
+        | Success(result, _, pos)   ->
+            if pos.Index > str.Length then
+                result
+            else
+                //failwithf "Did not consume all string.Current position %d. Leftover string '%s'" str.Length (str.Substring(int pos.Index - 1))
+                result
+        | Failure(errorMsg, err, _) -> failwithf "Failure: %s. \n Leftover string '%s'" errorMsg (str.Substring(int err.Position.Index - 1))

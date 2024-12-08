@@ -8,9 +8,12 @@ open JsParser
 let ``Number parsing`` () =
     let program = parseJs "3"
     match program with 
-    | JsNumberConstant nc -> 
-        Assert.Equal(3., nc)
-    | _ -> Assert.True(false, "Expected number constant")
+    | [expr] ->
+        match expr with
+        | JsNumberConstant nc -> 
+            Assert.Equal(3., nc)
+        | _ -> Assert.True(false, "Expected number constant")
+    | _ -> Assert.Fail("Expected single expression")
 
 [<Theory>]
 [<InlineData("true", true)>]
@@ -18,17 +21,24 @@ let ``Number parsing`` () =
 let ``True parsing`` code expected =
     let program = parseJs code
     match program with 
-    | JsBool b -> 
-        Assert.Equal(expected, b)
-    | _ -> Assert.True(false, "Expected bool constant")
+    | [expr] ->
+        match expr with
+        | JsBool b -> 
+            Assert.Equal(expected, b)
+        | _ -> Assert.True(false, "Expected bool constant")
+        | _ -> Assert.Fail("Expected single expression")
+    | _ -> Assert.Fail("Expected single expression")
 
 [<Fact>]
 let ``Null parsing`` () =
     let program = parseJs "null"
     match program with 
-    | JsNull -> 
-        Assert.True(true)
-    | _ -> Assert.True(false, sprintf "Expected null, but %O was given" program)
+    | [expr] ->
+        match expr with
+        | JsNull -> 
+            Assert.True(true)
+        | _ -> Assert.True(false, sprintf "Expected null, but %O was given" program)
+    | _ -> Assert.Fail("Expected single expression")
 
 [<Theory>]
 [<InlineData("\"true\"", "true")>]
@@ -38,9 +48,12 @@ let ``Null parsing`` () =
 let ``String literal parsing`` code expected =
     let program = parseJs code
     match program with 
-    | JsString s -> 
-        Assert.Equal(expected, s)
-    | _ -> Assert.True(false, "Expected string constant")
+    | [expr] ->
+        match expr with
+        | JsString s -> 
+            Assert.Equal(expected, s)
+        | _ -> Assert.True(false, "Expected string constant")
+    | _ -> Assert.Fail("Expected single expression")
     
     
 [<Theory>]
@@ -51,9 +64,12 @@ let ``String literal parsing`` code expected =
 let ``Binary math expression parsing`` code expected =
     let program = parseJs code
     match program with 
-    | BinaryExpression (left, op, right) -> 
-        Assert.Equal(expected, op)
-    | _ -> Assert.True(false, "Expected binary expression")
+    | [expr] ->
+        match expr with
+        | BinaryExpression (left, op, right) -> 
+            Assert.Equal(expected, op)
+        | _ -> Assert.True(false, "Expected binary expression")
+    | _ -> Assert.Fail("Expected single expression")
 
 [<Theory>]
 [<InlineData("+ 2", "+")>]
@@ -63,6 +79,25 @@ let ``Binary math expression parsing`` code expected =
 let ``Unary math expression parsing`` code expected =
     let program = parseJs code
     match program with 
-    | UnaryExpression (op, expr) -> 
-        Assert.Equal(expected, op)
-    | _ -> Assert.True(false, "Expected unary expression")
+    | [expr] ->
+        match expr with
+        | UnaryExpression (op, expr) -> 
+            Assert.Equal(expected, op)
+        | _ -> Assert.True(false, "Expected unary expression")
+    | _ -> Assert.Fail("Expected single expression")
+
+[<Theory>]
+[<InlineData("return", true)>]
+[<InlineData("return   ", true)>]
+[<InlineData("return 5", false)>]
+[<InlineData("return 5   ", false)>]
+[<InlineData("return
+5", true)>]
+[<InlineData("5", false)>]
+let ``First return without expression`` code isNone =
+    let x = test "5\n5\t"
+    let program = parseJs code
+    match program |> List.head with 
+    | Return (expr) -> 
+        Assert.Equal(isNone, expr.IsNone)
+    | expr -> Assert.True(false, sprintf "Expected return expression %O given" expr)
