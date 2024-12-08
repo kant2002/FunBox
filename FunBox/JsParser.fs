@@ -58,26 +58,14 @@
         | ((a, b), c) -> (a, b, c) 
      //   | _ -> failwith "Invalid tuple to flatten"
 
-    type JsPrimitiveExpression = 
+    type JsExpression = 
         | JsNumberConstant of float
         | JsIdentifier    of string
         | JsString    of string
         | JsBool    of bool
         | JsNull
-        
-    type JsMathExpression = 
-        | BinaryArithmeticOperator of JsMathExpression * string * JsMathExpression
-        | UnaryArithmeticOperator  of string * JsMathExpression
-        | Primitive                of JsPrimitiveExpression
-
-    type JsLogicalExpression =
-        | BinaryLogicalOperator    of JsLogicalExpression * string * JsLogicalExpression
-        | BinaryComparisonOperator of JsMathExpression * string * JsMathExpression
-        | UnaryLogicalOperator     of string * JsLogicalExpression
-
-    type JsExpression = | JsLogicalExpression of JsLogicalExpression | JsMathExpression of JsMathExpression
-
-    type JsProgram = JsExpression
+        | BinaryExpression of JsExpression * string * JsExpression
+        | UnaryExpression  of string * JsExpression
 
     let strToBool v =
         v = "true"
@@ -87,32 +75,35 @@
     let JS_BOOL = (str_ws "true") <|> (str_ws "false") |>> strToBool |>> JsBool
     let JS_NULL = stringReturn "null" JsNull .>> ws
     let JS_STRING = stringLiteral |>> JsString
-    let JS_PRIMITIVE_EXPRESSION = JS_NUMBER_CONSTANT <|> JS_IDENTIFIER <|> JS_BOOL <|> JS_NULL <|> JS_STRING |>> Primitive
+    let JS_PRIMITIVE_EXPRESSION = JS_NUMBER_CONSTANT <|> JS_IDENTIFIER <|> JS_BOOL <|> JS_NULL <|> JS_STRING
 
-    let arithOpp = new OperatorPrecedenceParser<JsMathExpression,unit,unit>()
+    let arithOpp = new OperatorPrecedenceParser<JsExpression,unit,unit>()
     let JS_MATH_EXPRESSION = arithOpp.ExpressionParser
     let arithExpressionTerm = (JS_PRIMITIVE_EXPRESSION) <|> between (str_ws "(") (str_ws ")") JS_MATH_EXPRESSION
     arithOpp.TermParser <- arithExpressionTerm
 
-    arithOpp.AddOperator(InfixOperator("+", ws, 1, Associativity.Left, fun x y -> BinaryArithmeticOperator(x, "+", y)))
-    arithOpp.AddOperator(InfixOperator("-", ws, 1, Associativity.Left, fun x y -> BinaryArithmeticOperator(x, "-", y)))
-    arithOpp.AddOperator(InfixOperator("*", ws, 2, Associativity.Left, fun x y -> BinaryArithmeticOperator(x, "*", y)))
-    arithOpp.AddOperator(InfixOperator("/", ws, 2, Associativity.Left, fun x y -> BinaryArithmeticOperator(x, "/", y)))
-    arithOpp.AddOperator(PrefixOperator("-", ws, 3, false, fun x -> UnaryArithmeticOperator("-", x)))
+    arithOpp.AddOperator(InfixOperator("+", ws, 1, Associativity.Left, fun x y -> BinaryExpression(x, "+", y)))
+    arithOpp.AddOperator(InfixOperator("-", ws, 1, Associativity.Left, fun x y -> BinaryExpression(x, "-", y)))
+    arithOpp.AddOperator(InfixOperator("*", ws, 2, Associativity.Left, fun x y -> BinaryExpression(x, "*", y)))
+    arithOpp.AddOperator(InfixOperator("/", ws, 2, Associativity.Left, fun x y -> BinaryExpression(x, "/", y)))
+    arithOpp.AddOperator(PrefixOperator("-", ws, 3, false, fun x -> UnaryExpression("-", x)))
+    arithOpp.AddOperator(PrefixOperator("+", ws, 3, false, fun x -> UnaryExpression("+", x)))
+    arithOpp.AddOperator(PrefixOperator("++", ws, 3, false, fun x -> UnaryExpression("++", x)))
+    arithOpp.AddOperator(PrefixOperator("--", ws, 3, false, fun x -> UnaryExpression("--", x)))
 
-    let logicOpp = new OperatorPrecedenceParser<JsLogicalExpression,unit,unit>()
+    let logicOpp = new OperatorPrecedenceParser<JsExpression,unit,unit>()
     let JS_LOGICAL_EXPRESSION = logicOpp.ExpressionParser
     let logicalOperator = str_ws "=" <|> str_ws "<=" <|> str_ws ">=" <|> str_ws "<>" <|> str_ws ">" <|> str_ws "<"
     let primitiveLogicalExpression =
-        (JS_PRIMITIVE_EXPRESSION .>>.? logicalOperator .>>. JS_PRIMITIVE_EXPRESSION |>> flatten |>> BinaryComparisonOperator)
+        (JS_PRIMITIVE_EXPRESSION .>>.? logicalOperator .>>. JS_PRIMITIVE_EXPRESSION |>> flatten |>> BinaryExpression)
     let logicExpressionTerm = (primitiveLogicalExpression) <|> between (str_ws "(") (str_ws ")") JS_LOGICAL_EXPRESSION
     logicOpp.TermParser <- logicExpressionTerm
 
-    logicOpp.AddOperator(InfixOperator("&&", ws, 1, Associativity.Left, fun x y -> BinaryLogicalOperator(x, "&&", y)))
-    logicOpp.AddOperator(InfixOperator("||", ws, 1, Associativity.Left, fun x y -> BinaryLogicalOperator(x, "||", y)))
-    logicOpp.AddOperator(PrefixOperator("!", ws, 3, false, fun x -> UnaryLogicalOperator("!", x)))
+    logicOpp.AddOperator(InfixOperator("&&", ws, 1, Associativity.Left, fun x y -> BinaryExpression(x, "&&", y)))
+    logicOpp.AddOperator(InfixOperator("||", ws, 1, Associativity.Left, fun x y -> BinaryExpression(x, "||", y)))
+    logicOpp.AddOperator(PrefixOperator("!", ws, 3, false, fun x -> UnaryExpression("!", x)))
 
-    let JS_EXPRESSION = JS_MATH_EXPRESSION |>> JsMathExpression
+    let JS_EXPRESSION = JS_MATH_EXPRESSION 
 
     let JS_PROGRAM = JS_EXPRESSION
 
